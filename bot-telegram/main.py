@@ -20,7 +20,7 @@ def connectmysql():
     return cursor, cnx
 
 def checkuser(cursor,id):
-    cursor.execute("SELECT idutente FROM utente JOIN telegramuser ON utente.idtelegram = telegramuser.idtelegramuser WHERE iduser='"+id+"'")
+    cursor.execute("SELECT idutente FROM utente JOIN telegramuser ON utente.idtelegram = telegramuser.idtelegramuser WHERE iduser='"+str(id)+"'")
     test01='idtelegram'
     for row in cursor.fetchall():
         test01=row[0]
@@ -29,6 +29,13 @@ def checkuser(cursor,id):
     else:
         message='hai già un account collegato a questo account telegram'
     return message
+
+def idutente(cursor,id):
+    querry="SELECT idutente FROM utente JOIN telegramuser ON utente.idtelegram = telegramuser.idtelegramuser WHERE iduser='"+str(id)+"'"
+    cursor.execute(querry)
+    for row in cursor.fetchall():
+        idutentev=row[0]
+    return idutentev
 
 
 @bot.process_message
@@ -50,8 +57,104 @@ def listtopic_command(chat, message,args):
 
     chat.send(text_message,syntax="HTML")
     disconnectmysql(cursor,cnx)
+@bot.command('listtipotopic')
+def listtipotopic_command(chat,message,args):
+    cursor, cnx = connectmysql()
+    cursor.execute("SELECT * FROM tipo_topic ")
+    text_message=""
+    for row in cursor.fetchall():
+        text_message+='\n'+str(row[1])+"\t: "+str(row[2])
+    disconnectmysql(cursor,cnx)
+    chat.send(text_message,syntax="HTML")
 
+@bot.command('listtiponodi')
+def listtiponodi_command(chat,message,args):
+    cursor, cnx = connectmysql()
+    cursor.execute("SELECT nome_tipo_nodo FROM tipo_nodo ")
+    text_message=""
+    for row in cursor.fetchall():
+        text_message+='\n'+str(row[0])
+    chat.send(text_message,syntax="HTML")
+    disconnectmysql(cursor,cnx)
 
+@bot.command('creatopic')
+def creatopic_command(chat,message,args):
+    sender=message.sender
+    cursor, cnx = connectmysql()
+    if str(message.text)=="/creatopic":
+        text_message="invia il nome del topic  con questa sintassi <strong> /creatopic  nometopic:nodo:tipotopic </strong>  <b> importante un solo spazio </b>"
+    else:
+        nometopic,nodo,tipotopic=message.text[11:].split(':')
+        if "/" or '@' or '#' not in nometopic:
+            idutentev=idutente(cursor,sender.id)
+            nometopic=str(idutentev)+"/"+str(nometopic)
+            querry="SELECT idnodi FROM nodi JOIN tipo_nodo ON nodi.idtipo_nodo = tipo_nodo.idtipo_nodo WHERE idutente='"+str(idutentev)+"' AND nome_tipo_nodo='"+str(nodo)+"'"
+            cursor.execute(querry)
+            idnodo=" "
+            for row in cursor.fetchall():
+                idnodo=str(row[0])
+            if(idnodo != ' '):
+                querry="SELECT idtipo_topic FROM tipo_topic WHERE tipo_tipo='"+str(tipotopic)+"'"
+                idtipotopic=' '
+                cursor.execute(querry)
+                for row in cursor.fetchall():
+                    idtipotopic=row[0]
+                if(idtipotopic != ' '):
+                    querry="INSERT INTO topic (nome_topic,idnodo,idtipo_topic) VALUES ('"+str(nometopic)+"','"+str(idnodo)+"','"+str(idtipotopic)+"')"
+                    cursor.execute(querry)
+                    text_message="topic creato con successo "+nometopic+" nel nodo "+nodo+" di tipo "+tipotopic
+                else:
+                    text_message="tipo di topic inesistente per vedere una lista di tipo topic /tipotopic"
+            else:
+                text_message="nodo inesistente per creare un nodo /creanodo"
+        else:
+            text_message="nel nome del topic non ci devono essere caratteri speciali (/,@,#,)"
+    chat.send(str(text_message),syntax="HTML")
+    disconnectmysql(cursor,cnx)
+
+@bot.command('creanodo')
+def creanodo_command(chat,message,args):
+    sender=message.sender
+    cursor, cnx = connectmysql()
+    if str(message.text)=="/creanodo":
+        tiponodo='server'
+    else:
+        tiponodo=str(message.text[10:])
+    querry="SELECT COUNT(idtipo_nodo) FROM tipo_nodo"
+    cursor.execute(querry)
+    for row in cursor.fetchall():
+        numberrow=row[0]
+    querry="SELECT nome_tipo_nodo FROM tipo_nodo"
+    control01=0
+    control02=0
+    cursor.execute(querry)
+    for row in cursor.fetchall():
+        if(str(tiponodo)==str(row[0])):
+            control01=1
+        elif(control02==numberrow-1):
+            control01=2
+        control02+=1
+
+    if (control01==1):
+        querry="SELECT idtipo_nodo FROM tipo_nodo WHERE nome_tipo_nodo='"+tiponodo+"'"
+        cursor.execute(querry)
+        for row in cursor.fetchall():
+            idtiponodo=row[0]
+        idutentev=idutente(cursor,sender.id)
+        querry="INSERT INTO nodi (idutente, idtipo_nodo) VALUES ('"+str(idutentev)+"', '"+str(idtiponodo)+"')"
+        cursor.execute(querry)
+        querry="SELECT idnodi from nodi WHERE idutente='"+str(idutentev)+"' AND idtipo_nodo='"+str(idtiponodo)+"'"
+        cursor.execute(querry)
+        for row in cursor.fetchall():
+            control02=1
+        if(control02==1):
+            text_message="nodo creato con succeso il tipo di nodo è "+str(tiponodo)
+    elif(control01==2):
+        text_message="non è stato possibile creare il nodo perchè il tipo di nodo non esiste"
+    else:
+        text_message="errore generale per favore contatta il creatore del bot @matteob99"
+    chat.send(str(text_message),syntax="HTML")
+    disconnectmysql(cursor,cnx)
 
 @bot.command('login')
 def login_command(chat,message,args):
@@ -108,12 +211,11 @@ def start_command(chat,message,args):
         cursor.execute("INSERT INTO telegramuser (idtelegramuser,iduser,posizione) VALUES (%s,%s,'0');",dati)
 
         text_message= checkuser(cursor,sender.id)
-        text_message='benvenuto in @mqttclientbot \n' + text_message
-    chat.send(text_message)
+        text_message='benvenuto in @mqttclientbot per i vari comandi /help \n' + text_message
+    else:
+        text_message="errore generale contattare @matteob99"
+    chat.send(text_message,syntax="HTML")
     disconnectmysql(cursor,cnx)
-
-
-
 
 if __name__ == "__main__":
     bot.run()
